@@ -59,12 +59,12 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt, model }),
       });
-      
+
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      
+
       setCurrentImage(data.imageUrl);
-      
+
       // Save to history
       const record: PrintRecord = {
         id: `print_${Date.now()}`,
@@ -74,7 +74,7 @@ export default function Home() {
         createdAt: new Date().toISOString(),
       };
       addPrintToHistory(record);
-      
+
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -101,13 +101,13 @@ export default function Home() {
         {/* Hardware Console Panel */}
         <section className={styles.consolePanel}>
           <div className={styles.panelTitle}>
-            <div className={`${styles.statusLight} ${isGenerating ? styles.generating : ""}`} />
-            CONSOLE_DECK v1.0
+            <span role="img" aria-label="palette">🎨</span>
+            Describe an image and watch it come to life!
           </div>
-          
+
           <div className={styles.inputGroup}>
             <label className={styles.label}>Engine Selection</label>
-            <select 
+            <select
               className={styles.select}
               value={model}
               onChange={(e) => setModel(e.target.value)}
@@ -121,7 +121,7 @@ export default function Home() {
 
           <div className={styles.inputGroup}>
             <label className={styles.label}>Print Parameters</label>
-            <textarea 
+            <textarea
               className={styles.textarea}
               placeholder={modelPlaceholders[model]}
               value={prompt}
@@ -134,7 +134,7 @@ export default function Home() {
           {error && <div style={{ color: "#ef4444", fontSize: "0.85rem" }}>{error}</div>}
 
           <div className={styles.actions}>
-            <button 
+            <button
               className={styles.optimizeBtn}
               onClick={handleOptimize}
               disabled={isGenerating || isOptimizing || !prompt.trim()}
@@ -142,7 +142,7 @@ export default function Home() {
             >
               {isOptimizing ? "Optimizing..." : "✨ Optimize"}
             </button>
-            <button 
+            <button
               className={styles.generateBtn}
               onClick={handleGenerate}
               disabled={isGenerating || !prompt.trim()}
@@ -157,7 +157,7 @@ export default function Home() {
           <div className={styles.printSlot}></div>
           <div className={styles.imageContainer}>
             {isGenerating && <div className={styles.scannerLine}></div>}
-            
+
             {currentImage ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={currentImage} alt="Generated print" className={styles.printedImage} />

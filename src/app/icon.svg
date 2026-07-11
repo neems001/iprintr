@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <!-- Soft shadow for the printer body -->
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="12" stdDeviation="15" flood-color="#000000" flood-opacity="0.08" />
+    </filter>
+    <!-- Slightly sharper shadow for the emerging photo -->
+    <filter id="photoShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#000000" flood-opacity="0.12" />
+    </filter>
+  </defs>
+
+  <!-- Warm Off-White Background -->
+  <rect width="512" height="512" fill="#FAF8F5" rx="112" />
+
+  <!-- Top Blue Handle Arc -->
+  <path d="M 136 240 A 120 120 0 0 1 376 240" fill="none" stroke="#0055D4" stroke-width="40" stroke-linecap="round" />
+
+  <!-- Printer Blue Base -->
+  <rect x="100" y="180" width="312" height="150" fill="#0055D4" rx="24" filter="url(#shadow)" />
+  
+  <!-- Photo Emerging from Slot -->
+  <g filter="url(#photoShadow)">
+    <!-- White Photo Border -->
+    <polygon points="126,450 386,450 316,300 196,300" fill="#ffffff" />
+    <!-- Blue Image Area -->
+    <polygon points="144,434 368,434 306,312 206,312" fill="#4B8BF4" />
+    <!-- Mountain Background -->
+    <polygon points="144,434 290,434 220,360" fill="#0055D4" />
+    <!-- Mountain Foreground -->
+    <polygon points="230,434 368,434 305,370" fill="#0044b3" />
+    <!-- Sun/Moon -->
+    <circle cx="300" cy="340" r="14" fill="#FAF8F5" />
+  </g>
+
+  <!-- White Top Body (Covers photo top edge to create a slot effect) -->
+  <path d="M 100 204 A 24 24 0 0 1 124 180 H 388 A 24 24 0 0 1 412 204 V 300 H 100 Z" fill="#ffffff" />
+
+  <!-- iP Monogram Logo -->
+  <g transform="translate(210, 205)">
+    <!-- 'i' stem -->
+    <rect x="0" y="15" width="14" height="45" fill="#0055D4" />
+    <!-- 'i' custom triangle dot -->
+    <polygon points="0,9 14,9 14,-5" fill="#0055D4" />
+    <!-- 'P' shape with inner cutout -->
+    <path d="M 25 15 h 25 a 18 18 0 0 1 0 36 h -11 v 9 h -14 z m 14 14 v 8 h 11 a 4 4 0 0 0 0 -8 z" fill="#0055D4" />
+  </g>
+
+  <!-- Control Buttons -->
+  <circle cx="360" cy="275" r="6" fill="#0055D4" />
+  <circle cx="380" cy="275" r="6" fill="#A0AAB5" />
+</svg>
