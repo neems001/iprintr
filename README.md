@@ -1,36 +1,54 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# iprintr
 
-## Getting Started
+**iprintr** is a premium, hardware-inspired web application that routes text-to-image generation across multiple leading AI engines through a single, tactile interface. Designed to mimic the clean, mechanical aesthetics of a high-end physical printer, it seamlessly blends industrial design with cutting-edge generative AI.
 
-First, run the development server:
+## ✨ Features
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+- **Hardware-Inspired UI**: A pixel-perfect vanilla CSS design featuring a deep slate-blue accent, charcoal control panels, and satisfying CSS animations (including a "print scan" loader and a "feed slot" image reveal).
+- **Dynamic AI Routing**: Select your preferred rendering engine on the fly:
+  - `Engine V1 (Realistic)` - Powered by Hugging Face **FLUX.1-schnell**
+  - `Engine V2 (Artistic)` - Powered by Hugging Face **Stable Diffusion 3.5 Large**
+  - `Engine V3 (Fast/Smart)` - Powered by Google **Gemini 3.1 Flash** (Vector/SVG generation)
+- **AI Prompt Optimizer**: An optional built-in tool that uses Gemini 3.1 Flash to rewrite and enhance your basic prompts into highly descriptive, studio-quality instructions before printing.
+- **Local Print History**: A mock authentication system that uses `localStorage` to securely save your generated "prints" to a personal shelf without needing an external database.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 🚀 Getting Started
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Prerequisites
+You will need API keys from both Google and Hugging Face to run all engines.
+1. [Google AI Studio API Key](https://aistudio.google.com/) (For Gemini engines & prompt optimization)
+2. [Hugging Face Access Token](https://huggingface.co/settings/tokens) (For FLUX and SD 3.5)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Installation
 
-## Learn More
+1. Clone the repository and navigate into the project:
+   ```bash
+   cd iprintr
+   ```
 
-To learn more about Next.js, take a look at the following resources:
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+3. Create a `.env.local` file in the root directory and add your keys:
+   ```env
+   GEMINI_API_KEY="your_google_ai_studio_key"
+   HF_TOKEN="your_hugging_face_token"
+   ```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+4. Start the development server:
+   ```bash
+   npm run dev
+   ```
 
-## Deploy on Vercel
+5. Open [http://localhost:3000](http://localhost:3000) in your browser and start printing!
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 🛠️ Tech Stack
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Framework**: [Next.js](https://nextjs.org/) (App Router)
+- **Library**: React 18
+- **Styling**: Vanilla CSS (CSS Modules & Custom Properties)
+- **AI Integrations**: 
+  - Google Generative AI (`gemini-3.1-flash`)
+  - Hugging Face Serverless Inference API

@@ -1,65 +1,192 @@
-import Image from "next/image";
+"use client";
+
+import React, { useState } from "react";
+import Link from "next/link";
+import styles from "./page.module.css";
+import { useAuth, PrintRecord } from "./context/auth-context";
 
 export default function Home() {
+  const { user, history, addPrintToHistory } = useAuth();
+  const [prompt, setPrompt] = useState("");
+  const [model, setModel] = useState("flux");
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isOptimizing, setIsOptimizing] = useState(false);
+  const [currentImage, setCurrentImage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const modelPlaceholders: Record<string, string> = {
+    flux: "photography, real life...",
+    sd35: "abstract, anime, fine art...",
+    gemini: "graphics, design, layouts...",
+  };
+
+  const handleOptimize = async () => {
+    if (!prompt.trim()) return;
+    setIsOptimizing(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/optimize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setPrompt(data.optimizedPrompt);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsOptimizing(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault(); // Prevent default newline behavior
+      handleGenerate();
+    }
+  };
+
+  const handleGenerate = async () => {
+    if (!prompt.trim()) return;
+    setIsGenerating(true);
+    setCurrentImage(null);
+    setError(null);
+
+    try {
+      const res = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt, model }),
+      });
+      
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      
+      setCurrentImage(data.imageUrl);
+      
+      // Save to history
+      const record: PrintRecord = {
+        id: `print_${Date.now()}`,
+        prompt,
+        engine: model,
+        imageUrl: data.imageUrl,
+        createdAt: new Date().toISOString(),
+      };
+      addPrintToHistory(record);
+      
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <main className={`container ${styles.page}`}>
+      <header className={styles.header}>
+        <div className={styles.logo}>iprintr</div>
+        {user ? (
+          <Link href="/login" className={styles.authBtn}>
+            {user.name} (Profile)
+          </Link>
+        ) : (
+          <Link href="/login" className={styles.authBtn}>
+            Login / Sign Up
+          </Link>
+        )}
+      </header>
+
+      <div className={styles.mainGrid}>
+        {/* Hardware Console Panel */}
+        <section className={styles.consolePanel}>
+          <div className={styles.panelTitle}>
+            <div className={`${styles.statusLight} ${isGenerating ? styles.generating : ""}`} />
+            CONSOLE_DECK v1.0
+          </div>
+          
+          <div className={styles.inputGroup}>
+            <label className={styles.label}>Engine Selection</label>
+            <select 
+              className={styles.select}
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              disabled={isGenerating}
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+              <option value="flux">Engine V1 (Realistic) - Flux</option>
+              <option value="sd35">Engine V2 (Artistic) - SD 3.5</option>
+              <option value="gemini">Engine V3 (Fast/Smart) - Gemini</option>
+            </select>
+          </div>
+
+          <div className={styles.inputGroup}>
+            <label className={styles.label}>Print Parameters</label>
+            <textarea 
+              className={styles.textarea}
+              placeholder={modelPlaceholders[model]}
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={handleKeyDown}
+              disabled={isGenerating}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+          </div>
+
+          {error && <div style={{ color: "#ef4444", fontSize: "0.85rem" }}>{error}</div>}
+
+          <div className={styles.actions}>
+            <button 
+              className={styles.optimizeBtn}
+              onClick={handleOptimize}
+              disabled={isGenerating || isOptimizing || !prompt.trim()}
+              title="Enhance prompt using Gemini 2.5 Flash"
+            >
+              {isOptimizing ? "Optimizing..." : "✨ Optimize"}
+            </button>
+            <button 
+              className={styles.generateBtn}
+              onClick={handleGenerate}
+              disabled={isGenerating || !prompt.trim()}
+            >
+              {isGenerating ? "Processing..." : "Generate"}
+            </button>
+          </div>
+        </section>
+
+        {/* Printer Output Area */}
+        <section className={styles.canvasWrapper}>
+          <div className={styles.printSlot}></div>
+          <div className={styles.imageContainer}>
+            {isGenerating && <div className={styles.scannerLine}></div>}
+            
+            {currentImage ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={currentImage} alt="Generated print" className={styles.printedImage} />
+            ) : (
+              <div className={styles.emptyState}>
+                {isGenerating ? "Receiving transmission..." : "Awaiting input sequence."}
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
+
+      {/* History Rack */}
+      {history.length > 0 && (
+        <section className={styles.historyRack}>
+          <h2 className={styles.historyTitle}>Print History</h2>
+          <div className={styles.historyGrid}>
+            {history.map((item) => (
+              <div key={item.id} className={styles.historyItem}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={item.imageUrl} alt={item.prompt} className={styles.historyImg} />
+                <div className={styles.historyInfo}>
+                  <strong>{item.engine.toUpperCase()}</strong>: {item.prompt}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+    </main>
   );
 }

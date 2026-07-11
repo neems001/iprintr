@@ -1,0 +1,109 @@
+.loginContainer {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.loginCard {
+  background-color: var(--console-bg);
+  border-radius: var(--radius-md);
+  padding: 40px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: var(--shadow-console);
+  color: var(--text-inverse);
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.title {
+  font-family: var(--font-mono);
+  font-size: 1.5rem;
+  color: var(--bg-primary);
+  text-align: center;
+  margin-bottom: 10px;
+}
+
+.subtitle {
+  text-align: center;
+  color: var(--text-inverse-muted);
+  font-size: 0.9rem;
+}
+
+.inputGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.label {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-inverse-muted);
+}
+
+.input {
+  background-color: var(--console-bg-light);
+  color: white;
+  border: 1px solid var(--console-border);
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  outline: none;
+}
+
+.input:focus {
+  border-color: var(--accent-blue);
+}
+
+.submitBtn {
+  background-color: var(--accent-blue);
+  color: white;
+  padding: 14px;
+  border-radius: var(--radius-sm);
+  font-size: 1rem;
+  font-weight: 600;
+  width: 100%;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  transition: background-color 0.2s;
+  margin-top: 10px;
+}
+
+.submitBtn:hover {
+  background-color: var(--accent-blue-hover);
+}
+
+.backLink {
+  color: var(--text-inverse-muted);
+  text-align: center;
+  font-size: 0.85rem;
+  margin-top: 20px;
+  text-decoration: underline;
+}
+
+.backLink:hover {
+  color: white;
+}
+
+.logoutBtn {
+  background-color: #ef4444;
+  color: white;
+  padding: 14px;
+  border-radius: var(--radius-sm);
+  font-size: 1rem;
+  font-weight: 600;
+  width: 100%;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-top: 20px;
+}
+
+.logoutBtn:hover {
+  background-color: #dc2626;
+}
