@@ -16,7 +16,7 @@ export default function Home() {
 
   const modelPlaceholders: Record<string, string> = {
     flux: "photography, real life...",
-    sd35: "abstract, anime, fine art...",
+    sdxl: "abstract, anime, fine art...",
     gemini: "graphics, design, layouts...",
   };
 
@@ -114,7 +114,7 @@ export default function Home() {
               disabled={isGenerating}
             >
               <option value="flux">Engine V1 (Realistic) - Flux</option>
-              <option value="sd35">Engine V2 (Artistic) - SD 3.5</option>
+              <option value="sdxl">Engine V2 (Artistic) - SDXL</option>
               <option value="gemini">Engine V3 (Fast/Smart) - Gemini</option>
             </select>
           </div>
@@ -138,9 +138,9 @@ export default function Home() {
               className={styles.optimizeBtn}
               onClick={handleOptimize}
               disabled={isGenerating || isOptimizing || !prompt.trim()}
-              title="Enhance prompt using Gemini 2.5 Flash"
+              title="Enhance prompt using Gemini 3.5 Flash"
             >
-              {isOptimizing ? "Optimizing..." : "✨ Optimize"}
+              {isOptimizing ? "Enhancing..." : "✨ Enhance Prompt"}
             </button>
             <button
               className={styles.generateBtn}

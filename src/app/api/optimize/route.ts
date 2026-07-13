@@ -1,4 +1,21 @@
 import { NextResponse } from "next/server";
+import { GoogleGenAI } from "@google/genai";
+
+// Increase Vercel serverless function timeout
+export const maxDuration = 30;
+
+const SYSTEM_INSTRUCTION = `You are an expert AI art director and prompt engineer for image generation models like FLUX.1 and Stable Diffusion XL. 
+Your sole job is to take a simple user idea and translate it into a dense, visually descriptive, professional prompt.
+
+RULES:
+1. Do NOT use buzzwords or quality tag-spam like "masterpiece, 8k, trending on artstation, best quality, ultra-realistic".
+2. Break the description down into rich visual layers:
+   - Core Subject: Who or what is the focus? Describe wardrobe, pose, expression, and texture.
+   - Setting & Background: Where are they? Describe the environment, time of day, and surrounding objects.
+   - Lighting & Atmosphere: Describe the light sources (e.g., volumetric god rays, neon rim lighting, golden hour, moody shadows).
+   - Camera & Composition: Describe the shot type (e.g., 35mm lens, macro close-up, wide-angle cinematic shot, depth of field).
+3. CRITICAL: Format the output as a continuous stream of dense, highly descriptive phrases separated by commas, rather than long conversational sentences. Keep it under 75 words total.
+4. Output ONLY the optimized prompt string. Do not include introductory text, explanations, or quotes.`;
 
 export async function POST(request: Request) {
   try {
@@ -15,45 +32,39 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "GEMINI_API_KEY not configured on server" }, { status: 500 });
     }
 
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash:generateContent?key=${geminiKey}`;
-    
-    const payload = {
-      system_instruction: {
-        parts: {
-          text: "You are an expert prompt engineer for text-to-image AI models. The user will provide a basic idea or prompt. Rewrite and optimize it to be highly descriptive, adding appropriate photographic terms, lighting, composition, style, and atmosphere keywords. Keep the response to just the optimized prompt text. Do not add conversational filler like 'Here is your prompt'. Just output the prompt.",
-        }
-      },
-      contents: [
-        {
-          parts: [{ text: prompt }]
-        }
-      ],
-      generationConfig: {
-        temperature: 0.7,
-      }
-    };
+    const ai = new GoogleGenAI({ apiKey: geminiKey });
 
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: {
+        systemInstruction: SYSTEM_INSTRUCTION,
+        temperature: 0.7,
+      },
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Gemini Optimize API Error:", errorText);
-      return NextResponse.json({ error: `Gemini API error: ${response.statusText}` }, { status: response.status });
+    const optimizedPrompt = response.text?.trim() || "";
+
+    if (!optimizedPrompt) {
+      return NextResponse.json(
+        { error: "Gemini did not return an enhanced prompt. Try rephrasing your input." },
+        { status: 500 }
+      );
     }
 
-    const data = await response.json();
-    const optimizedPrompt = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    
-    return NextResponse.json({ 
-      optimizedPrompt: optimizedPrompt.trim()
-    });
+    return NextResponse.json({ optimizedPrompt });
 
   } catch (error: any) {
     console.error("Optimize API Error:", error);
+
+    // Handle specific SDK error codes
+    if (error.status === 429) {
+      return NextResponse.json(
+        { error: "Rate limit reached — please wait a moment and try again." },
+        { status: 429 }
+      );
+    }
+
     return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
   }
 }

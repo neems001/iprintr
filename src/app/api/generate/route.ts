@@ -1,4 +1,36 @@
 import { NextResponse } from "next/server";
+import { InferenceClient } from "@huggingface/inference";
+
+// Increase Vercel serverless function timeout (requires paid plan for >10s)
+export const maxDuration = 60;
+
+// Model IDs — the SDK resolves endpoints automatically, so URL changes won't break anything
+const HF_MODELS: Record<string, string> = {
+  flux: "black-forest-labs/FLUX.1-schnell",
+  sdxl: "stabilityai/stable-diffusion-xl-base-1.0",
+};
+
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  retries: number = 3,
+  delayMs: number = 2000
+): Promise<Response> {
+  for (let attempt = 0; attempt < retries; attempt++) {
+    const response = await fetch(url, options);
+
+    if (response.status === 429) {
+      const backoff = delayMs * Math.pow(2, attempt);
+      console.log(`Rate limited, retrying in ${backoff / 1000}s (attempt ${attempt + 1}/${retries})`);
+      await new Promise((r) => setTimeout(r, backoff));
+      continue;
+    }
+
+    return response;
+  }
+
+  return fetch(url, options);
+}
 
 export async function POST(request: Request) {
   try {
@@ -12,38 +44,34 @@ export async function POST(request: Request) {
     const hfToken = process.env.HF_TOKEN;
     const geminiKey = process.env.GEMINI_API_KEY;
 
-    if (model === "flux" || model === "sd35") {
+    if (model === "flux" || model === "sdxl") {
       if (!hfToken) {
         return NextResponse.json({ error: "HF_TOKEN not configured on server" }, { status: 500 });
       }
 
-      const endpoint = model === "flux"
-        ? "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell"
-        : "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-3.5-large";
+      const client = new InferenceClient(hfToken);
+      const modelId = HF_MODELS[model];
 
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${hfToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ inputs: prompt }),
-      });
+      try {
+        const imageBlob = await client.textToImage({
+          model: modelId,
+          inputs: prompt,
+        }, { outputType: "blob" });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("HF API Error:", errorText);
-        return NextResponse.json({ error: `Hugging Face API error: ${response.statusText}` }, { status: response.status });
+        const buffer = Buffer.from(await imageBlob.arrayBuffer());
+        const base64 = buffer.toString("base64");
+        const mimeType = imageBlob.type || "image/jpeg";
+
+        return NextResponse.json({
+          imageUrl: `data:${mimeType};base64,${base64}`,
+        });
+      } catch (hfError: any) {
+        console.error("HF SDK Error:", hfError);
+        return NextResponse.json(
+          { error: `Hugging Face API error: ${hfError.message || "Unknown error"}. The model may be temporarily unavailable — please try again in a moment.` },
+          { status: hfError.statusCode || 500 }
+        );
       }
-
-      const imageBlob = await response.blob();
-      const buffer = Buffer.from(await imageBlob.arrayBuffer());
-      const base64 = buffer.toString('base64');
-      const mimeType = imageBlob.type || "image/jpeg";
-
-      return NextResponse.json({
-        imageUrl: `data:${mimeType};base64,${base64}`
-      });
 
     } else if (model === "gemini") {
       if (!geminiKey) {
@@ -53,22 +81,19 @@ export async function POST(request: Request) {
       const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent?key=${geminiKey}`;
 
       const payload = {
-        system_instruction: {
-          parts: {
-            text: "You are an expert SVG illustrator. Generate ONLY valid, self-contained, responsive, and beautiful raw SVG code based on the user's prompt. DO NOT output markdown blocks (like ```svg), DO NOT include any explanatory text. ONLY output the raw <svg>...</svg> string. Ensure the SVG viewBox is set correctly and the illustration is visually impressive and colorful.",
-          }
-        },
         contents: [
           {
+            role: "user",
             parts: [{ text: prompt }]
           }
         ],
         generationConfig: {
+          responseModalities: ["TEXT", "IMAGE"],
           temperature: 0.7,
         }
       };
 
-      const response = await fetch(endpoint, {
+      const response = await fetchWithRetry(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -77,20 +102,30 @@ export async function POST(request: Request) {
       if (!response.ok) {
         const errorText = await response.text();
         console.error("Gemini API Error:", errorText);
-        return NextResponse.json({ error: `Gemini API error: ${response.statusText}` }, { status: response.status });
+        return NextResponse.json(
+          { error: `Gemini API error: ${response.statusText}. You may have hit a rate limit — please wait a moment and try again.` },
+          { status: response.status }
+        );
       }
 
       const data = await response.json();
-      let svgCode = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      const parts = data.candidates?.[0]?.content?.parts || [];
 
-      // Clean up markdown if the model hallucinates it despite instructions
-      svgCode = svgCode.replace(/```xml\n?/g, "").replace(/```svg\n?/g, "").replace(/```\n?/g, "").trim();
+      // Find the image part in the response (it comes as inlineData)
+      const imagePart = parts.find((p: any) => p.inlineData);
 
-      // Encode SVG as base64 to be used as an image source uniformly
-      const base64 = Buffer.from(svgCode).toString('base64');
-      return NextResponse.json({
-        imageUrl: `data:image/svg+xml;base64,${base64}`
-      });
+      if (imagePart && imagePart.inlineData) {
+        const { mimeType, data: base64Data } = imagePart.inlineData;
+        return NextResponse.json({
+          imageUrl: `data:${mimeType};base64,${base64Data}`
+        });
+      }
+
+      // Fallback: if no image was returned, return an error
+      return NextResponse.json(
+        { error: "Gemini did not return an image. Try rephrasing your prompt." },
+        { status: 500 }
+      );
 
     } else {
       return NextResponse.json({ error: "Invalid model selected" }, { status: 400 });
