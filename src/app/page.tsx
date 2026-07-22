@@ -57,7 +57,7 @@ export default function Home() {
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, model }),
+        body: JSON.stringify({ prompt, model, userId: user?.id }),
       });
 
       const data = await res.json();
@@ -65,16 +65,19 @@ export default function Home() {
 
       setCurrentImage(data.imageUrl);
 
-      // Save to history
-      const record: PrintRecord = {
-        id: `print_${Date.now()}`,
-        prompt,
-        engine: model,
-        imageUrl: data.imageUrl,
-        createdAt: new Date().toISOString(),
-      };
-      addPrintToHistory(record);
-
+      // Save database record to context history
+      if (data.record) {
+        addPrintToHistory(data.record);
+      } else {
+        addPrintToHistory({
+          id: `print_${Date.now()}`,
+          prompt,
+          engine: model,
+          imageUrl: data.imageUrl,
+          createdAt: new Date().toISOString(),
+          userId: user?.id,
+        });
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {

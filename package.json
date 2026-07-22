@@ -4,13 +4,16 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@google/genai": "^2.11.0",
     "@huggingface/inference": "^4.13.23",
+    "@prisma/client": "^6.4.0",
+    "@vercel/blob": "^0.27.1",
     "next": "16.2.10",
     "react": "19.2.4",
     "react-dom": "19.2.4"
@@ -22,6 +25,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
+    "prisma": "^6.4.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

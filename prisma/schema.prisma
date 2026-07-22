@@ -1,0 +1,26 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("IPRINTR_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id        String        @id @default(cuid())
+  email     String        @unique
+  name      String
+  createdAt DateTime      @default(now())
+  prints    PrintRecord[]
+}
+
+model PrintRecord {
+  id        String   @id @default(cuid())
+  prompt    String
+  engine    String
+  imageUrl  String
+  createdAt DateTime @default(now())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 
 export type PrintRecord = {
   id: string;
@@ -8,6 +8,7 @@ export type PrintRecord = {
   imageUrl: string;
   engine: string;
   createdAt: string;
+  userId?: string | null;
 };
 
 export type User = {
@@ -19,10 +20,11 @@ export type User = {
 type AuthContextType = {
   user: User | null;
   history: PrintRecord[];
-  login: (email: string, name: string) => void;
+  login: (email: string, name: string) => Promise<void>;
   logout: () => void;
-  signup: (email: string, name: string) => void;
+  signup: (email: string, name: string) => Promise<void>;
   addPrintToHistory: (print: PrintRecord) => void;
+  refreshHistory: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -31,51 +33,82 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [history, setHistory] = useState<PrintRecord[]>([]);
 
-  // Load from local storage on mount
-  useEffect(() => {
-    const storedUser = localStorage.getItem("iprintr_user");
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
-    }
-    const storedHistory = localStorage.getItem("iprintr_history");
-    if (storedHistory) {
-      setHistory(JSON.parse(storedHistory));
+  const fetchHistory = useCallback(async (currentUserId?: string | null) => {
+    try {
+      const url = currentUserId ? `/api/history?userId=${currentUserId}` : "/api/history";
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.history) {
+        setHistory(data.history);
+      }
+    } catch (err) {
+      console.error("Failed to fetch print history from database:", err);
     }
   }, []);
 
-  // Save to local storage whenever they change
+  // Fetch history from DB on initial mount or user change
   useEffect(() => {
-    if (user) {
-      localStorage.setItem("iprintr_user", JSON.stringify(user));
-    } else {
-      localStorage.removeItem("iprintr_user");
+    fetchHistory(user?.id);
+  }, [user, fetchHistory]);
+
+  const login = async (email: string, name: string) => {
+    const res = await fetch("/api/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "login", email, name }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || "Login failed");
     }
-  }, [user]);
 
-  useEffect(() => {
-    localStorage.setItem("iprintr_history", JSON.stringify(history));
-  }, [history]);
-
-  const login = (email: string, name: string) => {
-    // Mock login
-    setUser({ id: "usr_" + Date.now(), email, name });
+    setUser(data.user);
+    await fetchHistory(data.user.id);
   };
 
-  const signup = (email: string, name: string) => {
-    // Mock signup
-    setUser({ id: "usr_" + Date.now(), email, name });
+  const signup = async (email: string, name: string) => {
+    const res = await fetch("/api/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "signup", email, name }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || "Signup failed");
+    }
+
+    setUser(data.user);
+    await fetchHistory(data.user.id);
   };
 
   const logout = () => {
     setUser(null);
+    fetchHistory(null);
   };
 
   const addPrintToHistory = (print: PrintRecord) => {
     setHistory((prev) => [print, ...prev]);
   };
 
+  const refreshHistory = async () => {
+    await fetchHistory(user?.id);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, history, login, logout, signup, addPrintToHistory }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        history,
+        login,
+        logout,
+        signup,
+        addPrintToHistory,
+        refreshHistory,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

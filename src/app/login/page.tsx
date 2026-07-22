@@ -12,12 +12,22 @@ export default function Login() {
 
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (email && name) {
-      login(email, name);
+    if (!email || !name) return;
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      await login(email, name);
       router.push("/");
+    } catch (err: any) {
+      setError(err.message || "Failed to authenticate");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -48,8 +58,10 @@ export default function Login() {
   return (
     <div className={styles.loginContainer}>
       <form className={styles.loginCard} onSubmit={handleSubmit}>
-        <h1 className={styles.title}>Sign Up</h1>
-        <p className={styles.subtitle}>Enter credentials to have a personalised print history.</p>
+        <h1 className={styles.title}>Sign Up / Login</h1>
+        <p className={styles.subtitle}>Enter credentials to save your prints in Prisma Postgres.</p>
+
+        {error && <div style={{ color: "#ef4444", fontSize: "0.85rem", marginBottom: "0.5rem" }}>{error}</div>}
 
         <div className={styles.inputGroup}>
           <label className={styles.label}>Name</label>
@@ -60,6 +72,7 @@ export default function Login() {
             onChange={(e) => setName(e.target.value)}
             required
             placeholder="enter your name"
+            disabled={isSubmitting}
           />
         </div>
 
@@ -72,11 +85,12 @@ export default function Login() {
             onChange={(e) => setEmail(e.target.value)}
             required
             placeholder="enter your email"
+            disabled={isSubmitting}
           />
         </div>
 
-        <button type="submit" className={styles.submitBtn}>
-          Authenticate
+        <button type="submit" className={styles.submitBtn} disabled={isSubmitting}>
+          {isSubmitting ? "Authenticating..." : "Authenticate"}
         </button>
 
         <Link href="/" className={styles.backLink}>
