@@ -22,8 +22,15 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { prompt } = body;
 
-    if (!prompt) {
+    if (!prompt || typeof prompt !== "string") {
       return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
+    }
+
+    if (prompt.length > 2000) {
+      return NextResponse.json(
+        { error: "Prompt must be under 2000 characters" },
+        { status: 400 }
+      );
     }
 
     const geminiKey = process.env.GEMINI_API_KEY;
@@ -54,17 +61,24 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ optimizedPrompt });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Optimize API Error:", error);
 
     // Handle specific SDK error codes
-    if (error.status === 429) {
+    const status =
+      error instanceof Error && "status" in error
+        ? (error as { status: number }).status
+        : undefined;
+
+    if (status === 429) {
       return NextResponse.json(
         { error: "Rate limit reached — please wait a moment and try again." },
         { status: 429 }
       );
     }
 
-    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
+    const message =
+      error instanceof Error ? error.message : "Internal server error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

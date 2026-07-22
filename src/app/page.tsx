@@ -33,8 +33,8 @@ export default function Home() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setPrompt(data.optimizedPrompt);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
       setIsOptimizing(false);
     }
@@ -78,8 +78,8 @@ export default function Home() {
           userId: user?.id,
         });
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
       setIsGenerating(false);
     }

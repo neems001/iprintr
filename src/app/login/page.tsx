@@ -24,8 +24,8 @@ export default function Login() {
     try {
       await login(email, name);
       router.push("/");
-    } catch (err: any) {
-      setError(err.message || "Failed to authenticate");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to authenticate");
     } finally {
       setIsSubmitting(false);
     }

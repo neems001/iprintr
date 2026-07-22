@@ -29,14 +29,35 @@ type AuthContextType = {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const USER_STORAGE_KEY = "iprintr_user";
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [history, setHistory] = useState<PrintRecord[]>([]);
 
-  const fetchHistory = useCallback(async (currentUserId?: string | null) => {
+  // Restore user session from localStorage on mount
+  useEffect(() => {
     try {
-      const url = currentUserId ? `/api/history?userId=${currentUserId}` : "/api/history";
-      const res = await fetch(url);
+      const stored = localStorage.getItem(USER_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored) as User;
+        if (parsed.id && parsed.email && parsed.name) {
+          setUser(parsed);
+        } else {
+          localStorage.removeItem(USER_STORAGE_KEY);
+        }
+      }
+    } catch {
+      localStorage.removeItem(USER_STORAGE_KEY);
+    }
+  }, []);
+
+  const fetchHistory = useCallback(async (currentUserId?: string | null) => {
+    // Guests don't fetch from DB — their history is client-side only
+    if (!currentUserId) return;
+
+    try {
+      const res = await fetch(`/api/history?userId=${currentUserId}`);
       if (!res.ok) return;
       const data = await res.json();
       if (data.history) {
@@ -47,46 +68,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Fetch history from DB on initial mount or user change
+  // Fetch history from DB when user changes (login, logout, or restored from localStorage)
   useEffect(() => {
     fetchHistory(user?.id);
   }, [user, fetchHistory]);
 
-  const login = async (email: string, name: string) => {
+  // Shared login/signup logic — server does find-or-create either way
+  const authenticate = async (email: string, name: string, action: "login" | "signup") => {
     const res = await fetch("/api/auth", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "login", email, name }),
+      body: JSON.stringify({ action, email, name }),
     });
 
     const data = await res.json();
     if (!res.ok) {
-      throw new Error(data.error || "Login failed");
+      throw new Error(data.error || "Authentication failed");
     }
 
     setUser(data.user);
-    await fetchHistory(data.user.id);
+    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(data.user));
+    // fetchHistory is triggered automatically by the useEffect on `user`
+  };
+
+  const login = async (email: string, name: string) => {
+    await authenticate(email, name, "login");
   };
 
   const signup = async (email: string, name: string) => {
-    const res = await fetch("/api/auth", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "signup", email, name }),
-    });
-
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || "Signup failed");
-    }
-
-    setUser(data.user);
-    await fetchHistory(data.user.id);
+    await authenticate(email, name, "signup");
   };
 
   const logout = () => {
     setUser(null);
-    fetchHistory(null);
+    setHistory([]);
+    localStorage.removeItem(USER_STORAGE_KEY);
   };
 
   const addPrintToHistory = (print: PrintRecord) => {

@@ -14,10 +14,10 @@ export const db =
   new PrismaClient({
     datasources: databaseUrl
       ? {
-          db: {
-            url: databaseUrl,
-          },
-        }
+        db: {
+          url: databaseUrl,
+        },
+      }
       : undefined,
   });
 

@@ -1,0 +1,231 @@
+# iprintr — Codebase Audit
+
+## Summary
+
+Reviewed all 10 source files across API routes, client pages, context, database, styles, and configuration. Found **5 bugs/errors**, **4 security concerns**, and **5 code quality issues**.
+
+---
+
+## 🔴 Bugs & Errors
+
+### 1. History API leaks ALL users' data when no `userId` is provided
+
+**Severity**: High — Data leak  
+**File**: [route.ts](file:///c:/Users/DELL/Documents/personal%20proejcts/image%20gen/iprintr/src/app/api/history/route.ts#L9-L13)
+
+```typescript
+const history = await db.printRecord.findMany({
+  where: userId ? { userId } : undefined, // ← no userId → returns EVERYTHING
+  orderBy: { createdAt: "desc" },
+  take: 50,
+});
+```
+
+When a guest (no `userId`) fetches `/api/history`, the `where` clause is `undefined`, so Prisma returns **the 50 most recent prints from ALL users**. Any visitor can see other people's prompts and image URLs.
+
+**Fix**: Return an empty array for unauthenticated requests, or only return records where `userId IS NULL` (true guest prints):
+
+```typescript
+where: userId ? { userId } : { userId: null },
+```
+
+---
+
+### 2. Auth has no real security — login and signup do the same thing
+
+**Severity**: High — No authentication  
+**File**: [route.ts](file:///c:/Users/DELL/Documents/personal%20proejcts/image%20gen/iprintr/src/app/api/auth/route.ts#L16-L47)
+
+Both the `"signup"` and `"login"` branches are identical: find-or-create by email. There is **no password, no token, no session**. Anyone can "log in" as any email address and immediately access that user's data. The user object is stored only in React state, so refreshing the page logs you out.
+
+> [!WARNING]
+> This means any user can impersonate any other user by simply typing their email.
+
+**Fix**: Implement real authentication (e.g., NextAuth.js, Clerk, or at minimum email-based magic links). If this is intentionally a demo/prototype, add a clear warning.
+
+---
+
+### 3. `signup` function in auth-context is declared but never used
+
+**Severity**: Low — Dead code  
+**File**: [auth-context.tsx](file:///c:/Users/DELL/Documents/personal%20proejcts/image%20gen/iprintr/src/app/context/auth-context.tsx#L71-L85)
+
+The `signup` function is defined in `AuthProvider` and exposed via context, but the [login page](file:///c:/Users/DELL/Documents/personal%20proejcts/image%20gen/iprintr/src/app/login/page.tsx#L10) only destructures `login`:
+
+```typescript
+const { user, login, logout } = useAuth();
+```
+
+Since the API's `login` and `signup` do the same thing anyway, this is dead code. But if they were *meant* to differ (e.g., signup shows a welcome message), it's a missing feature.
+
+---
+
+### 4. `fetchHistory` on logout fetches without `await`
+
+**Severity**: Low — Potential race condition  
+**File**: [auth-context.tsx](file:///c:/Users/DELL/Documents/personal%20proejcts/image%20gen/iprintr/src/app/context/auth-context.tsx#L87-L90)
+
+```typescript
+const logout = () => {
+  setUser(null);
+  fetchHistory(null); // ← not awaited, fire-and-forget
+};
+```
+
+Since `logout` isn't `async`, `fetchHistory(null)` fires without being awaited. If it fails, the error is silently swallowed. More importantly, the `useEffect` on `user` will *also* call `fetchHistory(null)` when `setUser(null)` triggers a re-render — so you get **two concurrent fetches** for the same data.
+
+---
+
+### 5. Double history fetch on login/signup
+
+**Severity**: Low — Wasted network call  
+**File**: [auth-context.tsx](file:///c:/Users/DELL/Documents/personal%20proejcts/image%20gen/iprintr/src/app/context/auth-context.tsx#L55-L69)
+
+```typescript
+const login = async (email: string, name: string) => {
+  // ...
+  setUser(data.user);          // triggers useEffect → fetchHistory(data.user.id)
+  await fetchHistory(data.user.id); // also fetches history explicitly
+};
+```
+
+`setUser` triggers the `useEffect` that calls `fetchHistory(user?.id)`, **and** the next line also calls `fetchHistory`. Two identical requests fire simultaneously.
+
+**Fix**: Remove the explicit `await fetchHistory()` calls from `login`/`signup`/`logout` — the `useEffect` already handles it.
+
+---
+
+## 🟡 Security Concerns
+
+### 1. Gemini API key exposed in client-visible URL
+
+**File**: [route.ts](file:///c:/Users/DELL/Documents/personal%20proejcts/image%20gen/iprintr/src/app/api/generate/route.ts#L87)
+
+```typescript
+const endpoint = `...?key=${geminiKey}`;
+```
+
+The key is used server-side, so it's not *directly* exposed to the browser. However, it's passed as a URL query parameter, which means it will appear in:
+- Server access logs
+- Any proxy / CDN logs
+- Gemini's own URL logging
+
+> [!TIP]
+> Use the `x-goog-api-key` HTTP header instead of the `key` query parameter for the REST endpoint. Or better yet, use the `@google/genai` SDK (which you already use in the optimize route) for consistency.
+
+---
+
+### 2. No input validation / sanitization on prompts
+
+**Files**: [generate/route.ts](file:///c:/Users/DELL/Documents/personal%20proejcts/image%20gen/iprintr/src/app/api/generate/route.ts#L39-L40), [optimize/route.ts](file:///c:/Users/DELL/Documents/personal%20proejcts/image%20gen/iprintr/src/app/api/optimize/route.ts#L22-L23)
+
+Prompts are accepted as-is with no length limit or sanitization. A malicious user could:
+- Send extremely long prompts (DoS the AI APIs and your DB)
+- Send prompt injection attacks to the Gemini optimize endpoint
+
+**Fix**: Add a max-length check (e.g., 2000 chars) and basic sanitization.
+
+---
+
+### 3. No rate limiting on API routes
+
+All API routes (`/api/generate`, `/api/optimize`, `/api/auth`, `/api/history`) have no rate limiting. A script could:
+- Burn through your Hugging Face / Gemini API credits
+- Flood your database with records
+- DDoS your Vercel function invocations
+
+---
+
+### 4. `userId` is passed from the client, not validated server-side
+
+**File**: [generate/route.ts](file:///c:/Users/DELL/Documents/personal%20proejcts/image%20gen/iprintr/src/app/api/generate/route.ts#L40)
+
+```typescript
+const { prompt, model, userId } = body;
+// ...
+userId: userId || null, // stored directly in DB
+```
+
+Anyone can send any `userId` in the request body. Combined with the lack of auth, prints can be attributed to any user.
+
+---
+
+## 🔵 Code Quality Issues
+
+### 1. Data URLs stored in database as fallback
+
+**File**: [generate/route.ts](file:///c:/Users/DELL/Documents/personal%20proejcts/image%20gen/iprintr/src/app/api/generate/route.ts#L150-L155)
+
+When Vercel Blob upload fails, the fallback creates a `data:` URI:
+
+```typescript
+const base64 = imageBuffer.toString("base64");
+imageUrl = `data:${mimeType};base64,${base64}`;
+```
+
+A typical generated image is 500KB–2MB. Base64 encoding inflates that by ~33%. Storing a ~2.6MB string in a Postgres `String` column is very expensive and will bloat your database rapidly. It also means the history API returns these massive strings on every page load.
+
+> [!CAUTION]
+> This can quickly make your database unusable. Consider failing gracefully instead of storing data URIs, or use a different storage fallback.
+
+---
+
+### 2. `any` types used extensively for error handling
+
+**Files**: Multiple — [page.tsx:L36](file:///c:/Users/DELL/Documents/personal%20proejcts/image%20gen/iprintr/src/app/page.tsx#L36), [page.tsx:L81](file:///c:/Users/DELL/Documents/personal%20proejcts/image%20gen/iprintr/src/app/page.tsx#L81), [login/page.tsx:L27](file:///c:/Users/DELL/Documents/personal%20proejcts/image%20gen/iprintr/src/app/login/page.tsx#L27), all API routes
+
+Every `catch` block uses `catch (err: any)`. TypeScript strict mode is enabled but `any` defeats the purpose. Use `unknown` and narrow with type guards:
+
+```typescript
+catch (err: unknown) {
+  const message = err instanceof Error ? err.message : "Unknown error";
+}
+```
+
+---
+
+### 3. No user session persistence
+
+The user is stored in React state only (`useState<User | null>`). Refreshing the page loses the login entirely. Consider using `localStorage`, cookies, or a proper session mechanism.
+
+---
+
+### 4. Auth route duplicated logic
+
+**File**: [auth/route.ts](file:///c:/Users/DELL/Documents/personal%20proejcts/image%20gen/iprintr/src/app/api/auth/route.ts#L16-L47)
+
+The `signup` and `login` branches are character-for-character identical (both do find-or-create). This should be a single code path.
+
+---
+
+### 5. `fetchWithRetry` is only used for Gemini, but Hugging Face could also benefit
+
+**File**: [generate/route.ts](file:///c:/Users/DELL/Documents/personal%20proejcts/image%20gen/iprintr/src/app/api/generate/route.ts#L15-L35)
+
+The custom retry logic with exponential backoff only wraps the Gemini REST call. The HuggingFace SDK call (which is also rate-limited per their free tier) doesn't get any retry logic. Either use the SDK's built-in retry or wrap it similarly.
+
+---
+
+## ✅ Things Done Well
+
+- Prisma singleton pattern in `db.ts` correctly prevents connection exhaustion during dev hot-reload
+- Proper fallback chains for DB URL resolution (`IPRINTR_URL` → `IPRINTR_PRISMA_URL` → `POSTGRES_URL`)
+- `maxDuration` set on serverless routes — good for image generation
+- Clean CSS design system with CSS custom properties
+- Responsive grid layout with media queries
+- Good UX patterns (loading states, error display, keyboard shortcut for Enter)
+
+---
+
+## Priority Recommendations
+
+| Priority | Issue | Effort |
+|----------|-------|--------|
+| 🔴 P0 | Fix history API data leak | 1 line |
+| 🔴 P0 | Add real authentication | Medium |
+| 🟡 P1 | Move Gemini key to header / use SDK | Small |
+| 🟡 P1 | Add prompt length validation | Small |
+| 🟡 P1 | Add session persistence | Medium |
+| 🔵 P2 | Remove data URL fallback | Small |
+| 🔵 P2 | Remove double `fetchHistory` calls | Small |
+| 🔵 P2 | Replace `any` with `unknown` | Small |
