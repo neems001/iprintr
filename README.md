@@ -8,15 +8,13 @@ iprintr is a web app for creating images from text. A user writes a description,
 - Generate artwork with SDXL.
 - Generate images with Gemini.
 - Improve a short prompt before generation.
-- Let guests generate images without creating an account.
-- Save image history for users in PostgreSQL.
+- Let guests generate images and keep history without creating an account.
+- Let users sign in with OAuth and sync their guest images to their account.
 - Store generated image files in a public Vercel Blob store.
 
 ## Current project status
 
-Image generation, Blob storage, database storage, and image display work locally with development services.
-
-The current email login is only a demo. It does not use passwords, email checks, or secure server sessions. Do not use it as production authentication. See [Security notes](#security-notes) before deploying the app for real users.
+Image generation, Blob storage, database storage, guest sessions, and image display work locally with development services. OAuth sign-in uses Clerk and becomes available when Clerk development keys are present.
 
 ## Requirements
 
@@ -28,6 +26,7 @@ Install or create the following before starting:
 - A public Vercel Blob store
 - A Hugging Face access token for FLUX and SDXL
 - A Gemini API key for Gemini images and prompt improvement
+- A Clerk development instance if you want OAuth sign-in locally
 
 Use separate development services when working locally. Do not use production keys or production data for local testing.
 
@@ -51,9 +50,7 @@ Add your development keys and database address to `.env.local`. Never commit thi
 
 ### 3. Prepare the database
 
-The app needs the `User` and `PrintRecord` tables defined in `prisma/schema.prisma`.
-
-Prisma commands currently read `IPRINTR_URL`. Add it to your local environment file with the same value as `IPRINTR_DATABASE_URL`, then run:
+The app needs the `User` and `PrintRecord` tables defined in `prisma/schema.prisma`. For a new development database, run:
 
 ```bash
 npx prisma db push
@@ -61,7 +58,20 @@ npx prisma db push
 
 Only run this command against a development database unless you have reviewed the database change for another environment.
 
-### 4. Start the app
+For an existing database, review and apply the SQL file in `prisma/migrations` through your normal release process. It adds OAuth ownership, anonymous-session ownership, and lookup indexes. It does not remove data.
+
+### 4. Set up OAuth (optional)
+
+Guests can use the app without OAuth. To let people sign in and sync their guest images:
+
+1. Create a Clerk development instance.
+2. Enable Google, GitHub, or both under Clerk's social connections.
+3. Add the Clerk publishable key and secret key to `.env.local`.
+4. Restart the app.
+
+Clerk development instances can use Clerk's shared OAuth setup. Before a production launch, add your own provider credentials and callback addresses in Clerk.
+
+### 5. Start the app
 
 ```bash
 npm run dev
@@ -73,17 +83,18 @@ Restart the development server whenever you change an environment value.
 
 ## Environment settings
 
-All keys are used on the server. Do not add `NEXT_PUBLIC_` to their names because that would expose them to the browser.
+Most keys are server-only. The Clerk publishable key is intentionally public; all secret keys must stay on the server.
 
 | Name | Required | Purpose |
 | --- | --- | --- |
 | `HF_TOKEN` | For FLUX and SDXL | Lets the app call Hugging Face image models. |
 | `GEMINI_API_KEY` | For Gemini | Lets the app generate Gemini images and improve prompts. |
 | `IPRINTR_DATABASE_URL` | Yes | Connects the running app to PostgreSQL. |
-| `IPRINTR_URL` | For Prisma commands | Uses the same database address when running Prisma tools. |
 | `BLOB_STORE_ID` | With Vercel OIDC | Identifies the Vercel Blob store. OIDC is Vercel's short-lived sign-in method for services. |
 | `VERCEL_OIDC_TOKEN` | With `BLOB_STORE_ID` | Gives short-lived access to the Blob store. Refresh it when it expires. |
 | `BLOB_READ_WRITE_TOKEN` | Alternative Blob login | Can be used instead of the two OIDC settings above. |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | For OAuth | Public key that loads Clerk sign-in. |
+| `CLERK_SECRET_KEY` | For OAuth | Server secret used to verify OAuth sessions and read the signed-in profile. |
 
 The app also accepts `IPRINTR_POSTGRES_URL`, `IPRINTR_PRISMA_DATABASE_URL`, `IPRINTR_PRISMA_URL`, and `POSTGRES_URL` as database address names.
 
@@ -103,7 +114,9 @@ The store must be public because the browser displays the returned Blob URL dire
 5. The server saves the prompt, engine, image URL, and user link in PostgreSQL.
 6. The browser displays the image URL and adds it to the history list.
 
-Guest users can generate images without logging in. Their on-screen history is temporary and disappears after a reload. Signed-in users have history saved in PostgreSQL, subject to the security limitation described below.
+Guest users receive a random, HTTP-only cookie. The cookie value is never stored in the database. The app stores a SHA-256 hash of it with each guest image, so guest history survives reloads without exposing the session token to browser scripts.
+
+When a guest signs in through OAuth, the server verifies the account, links the matching guest records to that user, and clears the anonymous owner from those records. Future images are saved directly to the account. The browser never sends or chooses a database user ID.
 
 ## Main folders
 
@@ -111,11 +124,16 @@ Guest users can generate images without logging in. Their on-screen history is t
 src/app/                  Pages and shared styles
 src/app/api/generate/     Image generation and Blob upload
 src/app/api/optimize/     Prompt improvement
-src/app/api/auth/         Demo login
+src/app/api/session/      Guest and signed-in session details
 src/app/api/history/      Saved image history
-src/app/context/          Browser login and history state
+src/app/sign-in/          OAuth sign-in page
+src/app/account/          Signed-in account page
+src/app/context/          Browser session and history state
 src/lib/db.ts             PostgreSQL connection
+src/lib/request-identity.ts  Guest cookie, OAuth identity, and history sync
+src/proxy.ts              Clerk session checks
 prisma/schema.prisma      Database table definitions
+prisma/migrations/        Reviewed database changes
 tests/                    Storage and database tests
 ```
 
@@ -148,14 +166,17 @@ The storage tests do not call paid image services. They use sample image data an
 - Blob upload failures
 - Saved image URLs
 - Supported database environment names
+- HTTP-only anonymous sessions and hashed ownership
+- Guest-to-account history sync
 
 Before a release, also test one real image with development services:
 
 1. Generate an image in the browser.
 2. Confirm that the image appears.
 3. Open the image URL and confirm that it loads.
-4. Sign in with a test user and generate another image.
-5. Reload the page and confirm that the saved history returns.
+4. Reload as a guest and confirm that the saved history returns.
+5. Sign in with a test OAuth account and confirm the guest image still appears.
+6. Generate another image while signed in, reload, and confirm both images return.
 
 ## Troubleshooting
 
@@ -175,23 +196,19 @@ Check the key for the selected image engine. Also check the provider's access ru
 
 Check the server log for a database error. Confirm that the database address is correct and that both tables from `prisma/schema.prisma` exist.
 
-### Prisma cannot find the database address
+### OAuth buttons do not appear
 
-Prisma commands use `IPRINTR_URL`. Set it to the same address as `IPRINTR_DATABASE_URL` before running a Prisma command.
+Set both Clerk keys, enable at least one social connection in Clerk, and restart the development server. If either key is missing, the app stays in guest mode.
 
 ## Security notes
 
-The current login and history system is not ready for production:
-
-- Login accepts an email address without proving that the user owns it.
-- The browser stores the user object in local storage.
-- History requests accept a user ID from the browser.
-- A person who learns another user's ID could request that user's history.
+- OAuth identity is checked on the server through Clerk.
+- Guest cookies are HTTP-only, use `SameSite=Lax`, and use `Secure` in production.
+- PostgreSQL stores a one-way hash of the guest token, not the token itself.
+- History and generation routes choose ownership from the server session. They do not accept a user ID from the browser.
 - Public Blob images can be viewed by anyone who has their URL.
 
-Before a public launch, add real server-side authentication. The server should read the user ID from a trusted session cookie instead of accepting it from the request. Guest generation can remain available without login.
-
-Also add request limits before opening the app to the public. Image generation has a real cost, so limit requests by account, guest session, and network address.
+Add request limits before opening the app to the public. Image generation has a real cost, so limit requests by account, guest session, and network address.
 
 ## Deployment checklist
 
@@ -200,10 +217,10 @@ Before deploying:
 1. Use separate production services and keys.
 2. Add all required environment settings to the hosting project.
 3. Confirm that the Blob store is public.
-4. Review and apply the database change to the production database.
-5. Replace the demo login with secure authentication.
+4. Review and apply the database migration to the production database.
+5. Configure Clerk production keys and your own Google or GitHub OAuth credentials.
 6. Add request limits.
 7. Run the tests and production build.
-8. Generate one test image after deployment and confirm storage, display, and history.
+8. Test guest generation, OAuth sync, storage, display, and history after deployment.
 
 Never commit `.env`, `.env.local`, provider keys, database passwords, or Blob tokens.

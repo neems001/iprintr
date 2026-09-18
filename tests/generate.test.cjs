@@ -14,7 +14,7 @@ const source = ts.transpileModule(readFileSync('src/app/api/generate/route.ts', 
 }).outputText;
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
 
-function route() {
+function route({ databaseFails = false } = {}) {
   const calls = { generated: 0, records: [] };
   const mocks = {
     '@huggingface/inference': { InferenceClient: class {
@@ -27,18 +27,25 @@ function route() {
       } };
     } },
     '@/lib/db': { db: {
-      user: { findUnique: async () => ({ id: 'test-user' }) },
       printRecord: { create: async ({ data }) => {
+        if (databaseFails) throw new Error('fixture database failure');
         const record = { id: 'test-print', ...data, createdAt: new Date().toISOString() };
         calls.records.push(record);
         return record;
       } },
     } },
+    '@/lib/request-identity': {
+      resolveRequestIdentity: async () => ({
+        user: null,
+        userId: null,
+        anonymousSessionHash: 'fixture-session-hash',
+      }),
+    },
   };
   const mod = { exports: {} };
   new Function('require', 'exports', 'module', source)(name => mocks[name] || require(name), mod.exports, mod);
   return { calls, post: (model = 'flux') => mod.exports.POST(new Request('http://localhost/api/generate', {
-    method: 'POST', body: JSON.stringify({ prompt: 'A red cube', model, userId: 'test-user' }),
+    method: 'POST', body: JSON.stringify({ prompt: 'A red cube', model, userId: 'untrusted-user' }),
   })) };
 }
 
@@ -96,6 +103,8 @@ test('generation and storage regression coverage (no external network)', { timeo
       const result = await response.json();
       assert.equal(result.imageUrl, imageUrl);
       assert.equal(result.record.imageUrl, imageUrl);
+      assert.equal(result.record.userId, null);
+      assert.equal(result.record.anonymousSessionHash, 'fixture-session-hash');
       assert.equal(calls.records.length, 1);
       const image = await blobRequire('undici').fetch(result.imageUrl);
       assert.equal(image.headers.get('content-type'), 'image/png');
@@ -141,6 +150,19 @@ test('generation and storage regression coverage (no external network)', { timeo
     assert.equal(result.code, 'STORAGE_CONFIGURATION_ERROR');
     assert.equal(calls.records.length, 0);
     assert.equal(JSON.stringify(result).includes('fixture_secret'), false);
+  });
+
+  await t.test('database failure is reported instead of returning a fake history record', async () => {
+    const imageUrl = 'https://fixture.public.blob.vercel-storage.com/database-failure.png';
+    pool.intercept({ method: 'PUT', path: /^\/api\/blob\/\?pathname=prints%2Fiprintr_/ })
+      .reply(200, { url: imageUrl, pathname: 'database-failure.png', contentType: 'image/png' });
+    const { post } = route({ databaseFails: true });
+    const response = await post();
+    const result = await response.json();
+    assert.equal(response.status, 503);
+    assert.equal(result.code, 'DATABASE_SAVE_FAILED');
+    assert.equal(result.imageUrl, imageUrl);
+    assert.equal(result.record, undefined);
   });
   agent.assertNoPendingInterceptors();
 });

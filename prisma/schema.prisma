@@ -1,6 +1,6 @@
 datasource db {
   provider = "postgresql"
-  url      = env("IPRINTR_URL")
+  url      = env("IPRINTR_DATABASE_URL")
 }
 
 generator client {
@@ -8,19 +8,24 @@ generator client {
 }
 
 model User {
-  id        String        @id @default(cuid())
-  email     String        @unique
-  name      String
-  createdAt DateTime      @default(now())
-  prints    PrintRecord[]
+  id             String        @id @default(cuid())
+  email          String        @unique
+  name           String
+  authProviderId String?       @unique
+  createdAt      DateTime      @default(now())
+  prints         PrintRecord[]
 }
 
 model PrintRecord {
-  id        String   @id @default(cuid())
-  prompt    String
-  engine    String
-  imageUrl  String
-  createdAt DateTime @default(now())
-  userId    String?
-  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                   String   @id @default(cuid())
+  prompt               String
+  engine               String
+  imageUrl             String
+  createdAt            DateTime @default(now())
+  userId               String?
+  anonymousSessionHash String?
+  user                 User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([anonymousSessionHash])
 }

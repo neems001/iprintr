@@ -4,6 +4,7 @@ import { GoogleGenAI } from "@google/genai";
 import { getVercelOidcToken } from "@vercel/oidc";
 import { BlobAccessError, BlobStoreNotFoundError, BlobStoreSuspendedError, put } from "@vercel/blob";
 import { db } from "@/lib/db";
+import { resolveRequestIdentity } from "@/lib/request-identity";
 
 // Increase Vercel serverless function timeout (requires paid plan for >10s)
 export const maxDuration = 60;
@@ -19,7 +20,7 @@ const HF_MODELS: Record<string, string> = {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { prompt, model, userId } = body;
+    const { prompt, model } = body;
 
     if (!prompt || typeof prompt !== "string") {
       return NextResponse.json(
@@ -61,15 +62,9 @@ export async function POST(request: Request) {
       );
     }
 
-    // Validate userId against the database if provided
-    let validUserId: string | null = null;
-    if (userId && typeof userId === "string") {
-      const userExists = await db.user.findUnique({
-        where: { id: userId },
-        select: { id: true },
-      });
-      validUserId = userExists ? userId : null;
-    }
+    // Ownership comes from the signed server session or secure guest cookie.
+    // A browser-supplied user ID is never trusted.
+    const identity = await resolveRequestIdentity();
 
     const hfToken = process.env.HF_TOKEN;
     const geminiKey = process.env.GEMINI_API_KEY;
@@ -233,19 +228,23 @@ export async function POST(request: Request) {
           prompt,
           engine: model,
           imageUrl,
-          userId: validUserId,
+          userId: identity.userId,
+          anonymousSessionHash: identity.anonymousSessionHash,
         },
       });
     } catch (dbError: unknown) {
-      console.warn("Postgres insert failed:", dbError);
-      record = {
-        id: `print_${Date.now()}`,
-        prompt,
-        engine: model,
-        imageUrl,
-        createdAt: new Date().toISOString(),
-        userId: validUserId,
-      };
+      console.error(
+        "Postgres insert failed:",
+        dbError instanceof Error ? dbError.constructor.name : "UnknownError",
+      );
+      return NextResponse.json(
+        {
+          code: "DATABASE_SAVE_FAILED",
+          error: "The image was stored, but its history record could not be saved.",
+          imageUrl,
+        },
+        { status: 503 },
+      );
     }
 
     return NextResponse.json({

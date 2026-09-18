@@ -10,6 +10,7 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@clerk/nextjs": "^7.9.4",
     "@google/genai": "^2.11.0",
     "@huggingface/inference": "^4.13.23",
     "@prisma/client": "^6.19.3",

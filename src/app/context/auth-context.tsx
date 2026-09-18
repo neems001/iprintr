@@ -1,6 +1,12 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
 
 export type PrintRecord = {
   id: string;
@@ -17,112 +23,91 @@ export type User = {
   name: string;
 };
 
+type SessionResponse = {
+  user: User | null;
+  history: PrintRecord[];
+  oauthConfigured: boolean;
+  error?: string;
+};
+
 type AuthContextType = {
   user: User | null;
   history: PrintRecord[];
-  login: (email: string, name: string) => Promise<void>;
-  logout: () => void;
-  signup: (email: string, name: string) => Promise<void>;
+  isLoading: boolean;
+  oauthConfigured: boolean;
   addPrintToHistory: (print: PrintRecord) => void;
-  refreshHistory: () => Promise<void>;
+  refreshSession: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const USER_STORAGE_KEY = "iprintr_user";
+async function loadSession() {
+  const response = await fetch("/api/session", { cache: "no-store" });
+  const data = (await response.json()) as SessionResponse;
+  if (!response.ok) throw new Error(data.error || "Session request failed");
+  return data;
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [history, setHistory] = useState<PrintRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [oauthConfigured, setOAuthConfigured] = useState(false);
 
-  // Restore user session from localStorage on mount
-  useEffect(() => {
+  const refreshSession = useCallback(async () => {
     try {
-      const stored = localStorage.getItem(USER_STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored) as User;
-        if (parsed.id && parsed.email && parsed.name) {
-          setUser(parsed);
-        } else {
-          localStorage.removeItem(USER_STORAGE_KEY);
-        }
-      }
-    } catch {
-      localStorage.removeItem(USER_STORAGE_KEY);
+      const data = await loadSession();
+      setUser(data.user);
+      setHistory(data.history);
+      setOAuthConfigured(data.oauthConfigured);
+    } catch (error) {
+      console.error(
+        "Failed to load the session:",
+        error instanceof Error ? error.message : "Unknown error",
+      );
+    } finally {
+      setIsLoading(false);
     }
   }, []);
 
-  const fetchHistory = useCallback(async (currentUserId?: string | null) => {
-    // Guests don't fetch from DB — their history is client-side only
-    if (!currentUserId) return;
+  useEffect(() => {
+    let active = true;
 
-    try {
-      const res = await fetch(`/api/history?userId=${currentUserId}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      if (data.history) {
+    void loadSession()
+      .then((data) => {
+        if (!active) return;
+        setUser(data.user);
         setHistory(data.history);
-      }
-    } catch (err) {
-      console.error("Failed to fetch print history from database:", err);
-    }
+        setOAuthConfigured(data.oauthConfigured);
+      })
+      .catch((error) => {
+        console.error(
+          "Failed to load the session:",
+          error instanceof Error ? error.message : "Unknown error",
+        );
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
-  // Fetch history from DB when user changes (login, logout, or restored from localStorage)
-  useEffect(() => {
-    fetchHistory(user?.id);
-  }, [user, fetchHistory]);
-
-  // Shared login/signup logic — server does find-or-create either way
-  const authenticate = async (email: string, name: string, action: "login" | "signup") => {
-    const res = await fetch("/api/auth", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, email, name }),
-    });
-
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || "Authentication failed");
-    }
-
-    setUser(data.user);
-    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(data.user));
-    // fetchHistory is triggered automatically by the useEffect on `user`
-  };
-
-  const login = async (email: string, name: string) => {
-    await authenticate(email, name, "login");
-  };
-
-  const signup = async (email: string, name: string) => {
-    await authenticate(email, name, "signup");
-  };
-
-  const logout = () => {
-    setUser(null);
-    setHistory([]);
-    localStorage.removeItem(USER_STORAGE_KEY);
-  };
-
-  const addPrintToHistory = (print: PrintRecord) => {
-    setHistory((prev) => [print, ...prev]);
-  };
-
-  const refreshHistory = async () => {
-    await fetchHistory(user?.id);
-  };
+  const addPrintToHistory = useCallback((print: PrintRecord) => {
+    setHistory((previous) => [print, ...previous]);
+  }, []);
 
   return (
     <AuthContext.Provider
       value={{
         user,
         history,
-        login,
-        logout,
-        signup,
+        isLoading,
+        oauthConfigured,
         addPrintToHistory,
-        refreshHistory,
+        refreshSession,
       }}
     >
       {children}

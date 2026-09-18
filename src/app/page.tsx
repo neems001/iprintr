@@ -3,10 +3,10 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import styles from "./page.module.css";
-import { useAuth, PrintRecord } from "./context/auth-context";
+import { useAuth } from "./context/auth-context";
 
 export default function Home() {
-  const { user, history, addPrintToHistory } = useAuth();
+  const { user, history, isLoading, oauthConfigured, addPrintToHistory } = useAuth();
   const [prompt, setPrompt] = useState("");
   const [model, setModel] = useState("flux");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -57,11 +57,14 @@ export default function Home() {
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, model, userId: user?.id }),
+        body: JSON.stringify({ prompt, model }),
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      if (!res.ok) {
+        if (data.imageUrl) setCurrentImage(data.imageUrl);
+        throw new Error(data.error);
+      }
 
       setCurrentImage(data.imageUrl);
 
@@ -75,7 +78,7 @@ export default function Home() {
           engine: model,
           imageUrl: data.imageUrl,
           createdAt: new Date().toISOString(),
-          userId: user?.id,
+          userId: user?.id ?? null,
         });
       }
     } catch (err: unknown) {
@@ -90,13 +93,17 @@ export default function Home() {
       <header className={styles.header}>
         <div className={styles.logo}>iprintr</div>
         {user ? (
-          <Link href="/login" className={styles.authBtn}>
+          <Link href="/account" className={styles.authBtn}>
             {user.name} (Profile)
           </Link>
-        ) : (
-          <Link href="/login" className={styles.authBtn}>
-            Login / Sign Up
+        ) : oauthConfigured ? (
+          <Link href="/sign-in" className={styles.authBtn}>
+            Sign in to sync
           </Link>
+        ) : (
+          <span className={styles.authBtn}>
+            {isLoading ? "Loading session..." : "Guest mode"}
+          </span>
         )}
       </header>
 

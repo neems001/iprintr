@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 import { AuthProvider } from "./context/auth-context";
+import { isOAuthConfigured } from "@/lib/auth-config";
 
 export const metadata: Metadata = {
   title: "iprintr | Hardware-Inspired Image Generator",
@@ -12,6 +14,8 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const content = <AuthProvider>{children}</AuthProvider>;
+
   return (
     <html lang="en">
       <head>
@@ -19,9 +23,7 @@ export default function RootLayout({
       </head>
       <body>
         <div className="hardware-line"></div>
-        <AuthProvider>
-          {children}
-        </AuthProvider>
+        {isOAuthConfigured() ? <ClerkProvider>{content}</ClerkProvider> : content}
       </body>
     </html>
   );
