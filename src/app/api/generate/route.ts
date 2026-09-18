@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { InferenceClient } from "@huggingface/inference";
 import { GoogleGenAI } from "@google/genai";
-import { put } from "@vercel/blob";
+import { BlobAccessError, BlobStoreNotFoundError, BlobStoreSuspendedError, put } from "@vercel/blob";
 import { db } from "@/lib/db";
 
 // Increase Vercel serverless function timeout (requires paid plan for >10s)
@@ -31,6 +31,24 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: `Prompt must be under ${MAX_PROMPT_LENGTH} characters` },
         { status: 400 }
+      );
+    }
+
+    if (model !== "flux" && model !== "sdxl" && model !== "gemini") {
+      return NextResponse.json({ error: "Invalid model selected" }, { status: 400 });
+    }
+
+    // Check storage before spending a generation request. The SDK otherwise
+    // discovers a missing token only after the image has already been generated.
+    const blobToken = process.env.BLOB_READ_WRITE_TOKEN?.trim();
+    const hasOidc = Boolean(process.env.BLOB_STORE_ID?.trim() && process.env.VERCEL_OIDC_TOKEN?.trim());
+    if (!blobToken && !hasOidc) {
+      return NextResponse.json(
+        {
+          code: "STORAGE_NOT_CONFIGURED",
+          error: "Image storage is not configured. Set BLOB_STORE_ID and VERCEL_OIDC_TOKEN, or BLOB_READ_WRITE_TOKEN, on the server.",
+        },
+        { status: 503 }
       );
     }
 
@@ -175,14 +193,23 @@ export async function POST(request: Request) {
       const blob = await put(filename, imageBuffer, {
         access: "public",
         contentType: mimeType,
+        token: blobToken,
       });
       imageUrl = blob.url;
     } catch (blobError: unknown) {
-      console.error("Vercel Blob upload failed:", blobError);
+      // Do not log request objects, which can contain credentials.
+      console.error("Vercel Blob upload failed:",
+        blobError instanceof Error ? blobError.constructor.name : "UnknownError");
+      const configurationError =
+        blobError instanceof BlobAccessError ||
+        blobError instanceof BlobStoreNotFoundError ||
+        blobError instanceof BlobStoreSuspendedError;
       return NextResponse.json(
         {
-          error:
-            "Image storage is temporarily unavailable. Please try again later.",
+          code: configurationError ? "STORAGE_CONFIGURATION_ERROR" : "STORAGE_UPLOAD_FAILED",
+          error: configurationError
+            ? "Image storage is unavailable. Check the server's Blob token and connected public store."
+            : "The generated image could not be saved to storage. Please try again later.",
         },
         { status: 503 }
       );

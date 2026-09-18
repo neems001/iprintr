@@ -5,6 +5,9 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 const databaseUrl =
+  process.env.IPRINTR_DATABASE_URL ||
+  process.env.IPRINTR_POSTGRES_URL ||
+  process.env.IPRINTR_PRISMA_DATABASE_URL ||
   process.env.IPRINTR_URL ||
   process.env.IPRINTR_PRISMA_URL ||
   process.env.POSTGRES_URL;
