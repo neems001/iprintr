@@ -107,7 +107,11 @@ test('generation and storage regression coverage (no external network)', { timeo
     delete process.env.BLOB_READ_WRITE_TOKEN;
     process.env.BLOB_STORE_ID = 'store_fixture';
     const oidcToken = `${Buffer.from('{}').toString('base64url')}.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString('base64url')}.fixture`;
-    process.env.VERCEL_OIDC_TOKEN = oidcToken;
+    // Vercel production supplies the token through request context only.
+    delete process.env.VERCEL_OIDC_TOKEN;
+    const contextKey = Symbol.for('@vercel/request-context');
+    const previousContext = globalThis[contextKey];
+    globalThis[contextKey] = { get: () => ({ headers: { 'x-vercel-oidc-token': oidcToken } }) };
     pool.intercept({ method: 'PUT', path: /^\/api\/blob\/\?pathname=prints%2Fiprintr_/ }).reply(200, options => {
       const headers = new Headers(options.headers);
       assert.equal(headers.get('authorization'), `Bearer ${oidcToken}`);
@@ -115,8 +119,13 @@ test('generation and storage regression coverage (no external network)', { timeo
       return { url: 'https://fixture.public.blob.vercel-storage.com/oidc.png', pathname: 'oidc.png', contentType: 'image/png' };
     });
     const { post, calls } = route();
-    assert.equal((await post()).status, 200);
-    assert.equal(calls.records.length, 1);
+    try {
+      assert.equal((await post()).status, 200);
+      assert.equal(calls.records.length, 1);
+    } finally {
+      if (previousContext === undefined) delete globalThis[contextKey];
+      else globalThis[contextKey] = previousContext;
+    }
     delete process.env.BLOB_STORE_ID;
     delete process.env.VERCEL_OIDC_TOKEN;
     process.env.BLOB_READ_WRITE_TOKEN = 'vercel_blob_rw_fixture_secret';

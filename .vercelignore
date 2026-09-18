@@ -1,0 +1,6 @@
+# Production uses the environment configured in Vercel.
+.env
+.env.*
+.agents
+.codex
+analysis_results-iprintr

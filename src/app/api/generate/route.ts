@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { InferenceClient } from "@huggingface/inference";
 import { GoogleGenAI } from "@google/genai";
+import { getVercelOidcToken } from "@vercel/oidc";
 import { BlobAccessError, BlobStoreNotFoundError, BlobStoreSuspendedError, put } from "@vercel/blob";
 import { db } from "@/lib/db";
 
@@ -41,8 +42,16 @@ export async function POST(request: Request) {
     // Check storage before spending a generation request. The SDK otherwise
     // discovers a missing token only after the image has already been generated.
     const blobToken = process.env.BLOB_READ_WRITE_TOKEN?.trim();
-    const hasOidc = Boolean(process.env.BLOB_STORE_ID?.trim() && process.env.VERCEL_OIDC_TOKEN?.trim());
-    if (!blobToken && !hasOidc) {
+    let oidcToken: string | undefined;
+    if (process.env.BLOB_STORE_ID?.trim()) {
+      try {
+        // Production credentials are in Vercel's request context, not process.env.
+        oidcToken = (await getVercelOidcToken()).trim() || undefined;
+      } catch {
+        // A configured read/write token remains a supported alternative.
+      }
+    }
+    if (!blobToken && !oidcToken) {
       return NextResponse.json(
         {
           code: "STORAGE_NOT_CONFIGURED",
@@ -194,6 +203,7 @@ export async function POST(request: Request) {
         access: "public",
         contentType: mimeType,
         token: blobToken,
+        oidcToken,
       });
       imageUrl = blob.url;
     } catch (blobError: unknown) {

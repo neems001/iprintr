@@ -41,13 +41,21 @@ export async function POST(request: Request) {
 
     const ai = new GoogleGenAI({ apiKey: geminiKey });
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+    const generate = (model: string) => ai.models.generateContent({
+      model,
       contents: prompt,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
         temperature: 0.7,
+        httpOptions: { timeout: 10000 },
       },
+    });
+
+    const response = await generate("gemini-3.5-flash").catch((error: unknown) => {
+      const status = error instanceof Error && "status" in error ? error.status : undefined;
+      if (status !== 503 && status !== 502 && status !== 504) throw error;
+      console.warn("Prompt enhancement provider unavailable; trying fallback", { status });
+      return generate("gemini-3.6-flash");
     });
 
     const optimizedPrompt = response.text?.trim() || "";
@@ -74,6 +82,13 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: "Rate limit reached — please wait a moment and try again." },
         { status: 429 }
+      );
+    }
+
+    if (status === 503 || status === 502 || status === 504) {
+      return NextResponse.json(
+        { error: "Prompt enhancement is temporarily busy. Please try again shortly, or generate with your original prompt." },
+        { status: 503 }
       );
     }
 
