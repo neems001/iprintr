@@ -44,6 +44,14 @@
   transform: translateY(-1px);
 }
 
+.authControl {
+  min-width: 40px;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
 .mainGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;

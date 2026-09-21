@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import { ClerkLoaded, ClerkLoading, Show, UserButton } from "@clerk/nextjs";
 import styles from "./page.module.css";
 import { useAuth } from "./context/auth-context";
 
@@ -92,14 +93,34 @@ export default function Home() {
     <main className={`container ${styles.page}`}>
       <header className={styles.header}>
         <div className={styles.logo}>iprintr</div>
-        {user ? (
-          <Link href="/account" className={styles.authBtn}>
-            {user.name} (Profile)
-          </Link>
-        ) : oauthConfigured ? (
-          <Link href="/sign-in" className={styles.authBtn}>
-            Sign in to sync
-          </Link>
+        {oauthConfigured ? (
+          <div className={styles.authControl}>
+            <ClerkLoading>
+              <span className={styles.authBtn}>Loading session...</span>
+            </ClerkLoading>
+            <ClerkLoaded>
+              <Show when="signed-in">
+                <UserButton
+                  userProfileMode="navigation"
+                  userProfileUrl="/account"
+                  signInUrl="/sign-in"
+                  appearance={{
+                    elements: {
+                      userButtonAvatarBox: {
+                        width: "40px",
+                        height: "40px",
+                      },
+                    },
+                  }}
+                />
+              </Show>
+              <Show when="signed-out">
+                <Link href="/sign-in" className={styles.authBtn}>
+                  Sign in to sync
+                </Link>
+              </Show>
+            </ClerkLoaded>
+          </div>
         ) : (
           <span className={styles.authBtn}>
             {isLoading ? "Loading session..." : "Guest mode"}
