@@ -23,7 +23,13 @@ export default function RootLayout({
       </head>
       <body>
         <div className="hardware-line"></div>
-        {isOAuthConfigured() ? <ClerkProvider>{content}</ClerkProvider> : content}
+        {isOAuthConfigured() ? (
+          <ClerkProvider signInUrl="/sign-in" signUpUrl="/sign-up">
+            {content}
+          </ClerkProvider>
+        ) : (
+          content
+        )}
       </body>
     </html>
   );
